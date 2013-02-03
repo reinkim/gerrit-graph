@@ -16,3 +16,8 @@ eg:
 		             --project platform/sdk \
 					 --since 2012-01-01 \
 					 --out stats-android-platform_sdk.svg
+
+### Auth
+
+May use gerrit http password to authenticate.
+Pass --auth {username}:{password} to use gerrit sites which do not allow anonymous accesses.
