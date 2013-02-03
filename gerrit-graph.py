@@ -22,8 +22,13 @@ __version__ = '0.0.1'
 
 import datetime
 import json
+import sys
 
+import gflags
 import requests
+
+
+FLAGS = gflags.FLAGS
 
 
 def retrieve_stats(host, project, day_since, auth=None, n=500):
@@ -43,26 +48,24 @@ def retrieve_stats(host, project, day_since, auth=None, n=500):
                'Accept-Encoding': 'gzip'}
 
     stats = {}
-    resume_key = None
+    resumeKey = None
     while True:
-        if resume_key:
-            resume = '+resume_sortkey:' + resume_key
+        if resumeKey:
+            resume = '+resume_sortkey:' + resumeKey
         else:
             resume = ''
-        print 'Get', url.format('')
         res = requests.get(url.format(resume),
                            auth=httpauth,
                            headers=headers)
         changes = json.loads(res.text[res.text.find('\n'):])
-        print '    got {}'.format(len(changes))
         for cs in changes:
             _update_stats(stats, cs)
 
         if '_more_changes' in changes[-1] and changes[-1]['_more_changes']:
-            first_day = _parse_datetime(changes[-1]['updated'])
-            if first_day.date() < day_since:
+            firstDay = _parse_datetime(changes[-1]['updated'])
+            if firstDay.date() < day_since:
                 break
-            resume_key = changes[-1]['_sortkey']
+            resumeKey = changes[-1]['_sortkey']
         else:
             break
     return stats
@@ -176,13 +179,41 @@ def print_graph(output, stats, firstDay, lastDay):
     print >> output, '</g></svg>'
 
 
-HOST = 'https://android-review.googlesource.com'
-PROJECT = 'platform/sdk'
+gflags.DEFINE_string('host', None, 'gerrit server')
+gflags.DEFINE_string('project', None, 'project')
+gflags.DEFINE_string('since', None, 'generate stats from this day')
+gflags.DEFINE_string('out', None, 'output file to save graph')
+gflags.DEFINE_string('auth', None, 'user:password')
 
-day_since = datetime.date.today() - datetime.timedelta(days=366)
-stats = retrieve_stats(HOST, PROJECT, day_since)
+gflags.MarkFlagAsRequired('host')
+gflags.MarkFlagAsRequired('project')
+gflags.MarkFlagAsRequired('out')
 
-minDay = day_since
-maxDay = max(stats.keys())
-with open('gerrit-stat-{}.svg'.format(PROJECT.replace('/', '_')), 'w+') as out:
-    print_graph(out, stats, minDay, maxDay)
+
+def main(argv):
+    try:
+        argv = FLAGS(argv)  # parse flags
+    except gflags.FlagsError, e:
+        print '%s\nUsage: %s ARGS\n%s' % (e, sys.argv[0], FLAGS)
+        sys.exit(1)
+
+    if FLAGS.since:
+        daySince = datetime.datetime.strptime(FLAGS.since, '%Y-%m-%d').date()
+    else:
+        daySince = datetime.date.today() - datetime.timedelta(days=366)
+
+    if FLAGS.auth:
+        user, passwd = FLAGS.auth.split(':')
+        auth = (user, passwd)
+    else:
+        auth = None
+
+    stats = retrieve_stats(FLAGS.host, FLAGS.project, daySince, auth=auth)
+    lastDay = max(stats.keys())
+
+    with open(FLAGS.out, 'w+') as out:
+        print_graph(out, stats, daySince, lastDay)
+
+
+if __name__ == '__main__':
+    main(sys.argv)
