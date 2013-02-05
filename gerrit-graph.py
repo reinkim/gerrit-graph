@@ -31,18 +31,26 @@ import requests
 FLAGS = gflags.FLAGS
 
 
-def retrieve_stats(host, project, day_since, auth=None, n=500):
+def retrieve_stats(host, project, day_since, auth=None):
     if host[-1] == '/':
         host = host[:-1]
+    httpauth = None
+    if auth:
+        httpauth = requests.auth.HTTPDigestAuth(*auth)
 
+    stats = _retrieve_stats(host, project, day_since, 'is:merged', auth=auth)
+    stats.update(
+            _retrieve_stats(host, project, day_since, 'is:open', auth=auth))
+    return stats
+
+
+def _retrieve_stats(host, project, day_since, status, auth=None, n=500):
     # host/a/changes/?q=is:merged+...(resume)?n=500
     if auth:
-        url = '%s/a/changes/?q=is:merged+project:%s{}&n=%d'
-        httpauth = requests.auth.HTTPDigestAuth(*auth)
+        url = '%s/a/changes/?q=%s+project:%s{}&n=%d'
     else:
-        url = '%s/changes/?q=is:merged+project:%s{}&n=%d'
-        httpauth = None
-    url = url % (host, project, n)
+        url = '%s/changes/?q=%s+project:%s{}&n=%d'
+    url = url % (host, status, project, n)
 
     headers = {'Accept': 'application/json',
                'Accept-Encoding': 'gzip'}
@@ -54,9 +62,8 @@ def retrieve_stats(host, project, day_since, auth=None, n=500):
             resume = '+resume_sortkey:' + resumeKey
         else:
             resume = ''
-        res = requests.get(url.format(resume),
-                           auth=httpauth,
-                           headers=headers)
+        res = requests.get(url.format(resume), auth=auth, headers=headers,
+                           verify=FLAGS.safe)
         changes = json.loads(res.text[res.text.find('\n'):])
         for cs in changes:
             _update_stats(stats, cs)
@@ -184,6 +191,7 @@ gflags.DEFINE_string('project', None, 'project')
 gflags.DEFINE_string('since', None, 'generate stats from this day')
 gflags.DEFINE_string('out', None, 'output file to save graph')
 gflags.DEFINE_string('auth', None, 'user:password')
+gflags.DEFINE_boolean('safe', True, 'verify ssl certificate')
 
 gflags.MarkFlagAsRequired('host')
 gflags.MarkFlagAsRequired('project')
