@@ -31,31 +31,40 @@ import requests
 FLAGS = gflags.FLAGS
 
 
-def retrieve_stats(host, project, day_since, auth=None):
+def retrieve_stats(stats, host, project, day_since, auth=None):
     if host[-1] == '/':
         host = host[:-1]
     httpauth = None
     if auth:
         httpauth = requests.auth.HTTPDigestAuth(*auth)
 
-    stats = _retrieve_stats(host, project, day_since, 'is:merged', auth=auth)
-    stats.update(
-            _retrieve_stats(host, project, day_since, 'is:open', auth=auth))
+    _retrieve_stats(stats, host, project, day_since, True, auth=httpauth)
+    _retrieve_stats(stats, host, project, day_since, False, auth=httpauth)
     return stats
 
 
-def _retrieve_stats(host, project, day_since, status, auth=None, n=500):
+def _retrieve_stats(stats, host, project, day_since, merged, auth=None, n=500):
+    if '@' in project:
+        project_str = 'project:{}+branch:{}'.format(*project.split('@'))
+    else:
+        project_str = 'project:{}'.format(project)
+
+    status = 'is:merged' if merged else 'is:open'
     # host/a/changes/?q=is:merged+...(resume)?n=500
     if auth:
-        url = '%s/a/changes/?q=%s+project:%s{}&n=%d'
+        url = '%s/a/changes/?q=%s+%s{}&n=%d'
     else:
-        url = '%s/changes/?q=%s+project:%s{}&n=%d'
-    url = url % (host, status, project, n)
+        url = '%s/changes/?q=%s+%s{}&n=%d'
+    url = url % (host, status, project_str, n)
 
     headers = {'Accept': 'application/json',
                'Accept-Encoding': 'gzip'}
 
-    stats = {}
+    if merged:
+        _update = _update_stats
+    else:
+        _update = _update_open_stats(datetime.datetime.now())
+
     resumeKey = None
     while True:
         if resumeKey:
@@ -65,8 +74,10 @@ def _retrieve_stats(host, project, day_since, status, auth=None, n=500):
         res = requests.get(url.format(resume), auth=auth, headers=headers,
                            verify=FLAGS.safe)
         changes = json.loads(res.text[res.text.find('\n'):])
+        if not changes:
+            break
         for cs in changes:
-            _update_stats(stats, cs)
+            _update(stats, cs)
 
         if '_more_changes' in changes[-1] and changes[-1]['_more_changes']:
             firstDay = _parse_datetime(changes[-1]['updated'])
@@ -75,12 +86,22 @@ def _retrieve_stats(host, project, day_since, status, auth=None, n=500):
             resumeKey = changes[-1]['_sortkey']
         else:
             break
-    return stats
 
 
 def _update_stats(stats, cs):
     begin = _parse_datetime(cs['created'])
     end = _parse_datetime(cs['updated'])
+    _do_update_stats(stats, begin, end)
+
+
+def _update_open_stats(now):
+    def __update_open_stats(stats, cs):
+        begin = _parse_datetime(cs['created'])
+        _do_update_stats(stats, begin, now)
+    return __update_open_stats
+
+
+def _do_update_stats(stats, begin, end):
     if begin.date() == end.date():
         delta = (end - begin).seconds
         _add_stat(stats, begin.date(), delta)
@@ -187,14 +208,12 @@ def print_graph(output, stats, firstDay, lastDay):
 
 
 gflags.DEFINE_string('host', None, 'gerrit server')
-gflags.DEFINE_string('project', None, 'project')
 gflags.DEFINE_string('since', None, 'generate stats from this day')
 gflags.DEFINE_string('out', None, 'output file to save graph')
 gflags.DEFINE_string('auth', None, 'user:password')
 gflags.DEFINE_boolean('safe', True, 'verify ssl certificate')
 
 gflags.MarkFlagAsRequired('host')
-gflags.MarkFlagAsRequired('project')
 gflags.MarkFlagAsRequired('out')
 
 
@@ -216,8 +235,15 @@ def main(argv):
     else:
         auth = None
 
-    stats = retrieve_stats(FLAGS.host, FLAGS.project, daySince, auth=auth)
-    lastDay = max(stats.keys())
+    projects = set(argv[1:])
+    if not projects:
+        print 'Please specify projects (eg. platform/sdk, platform/sdk@master)'
+        sys.exit(1)
+
+    stats = {}
+    for project in projects:
+        retrieve_stats(stats, FLAGS.host, project, daySince, auth=auth)
+        lastDay = max(stats.keys())
 
     with open(FLAGS.out, 'w+') as out:
         print_graph(out, stats, daySince, lastDay)
