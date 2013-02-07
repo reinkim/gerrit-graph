@@ -20,6 +20,7 @@ __author__ = 'rein01@gmail.com'
 __version__ = '0.0.1'
 
 
+import colorsys
 import datetime
 import json
 import sys
@@ -187,6 +188,20 @@ def print_graph(output, stats, firstDay, lastDay):
     print >> output, hr.format(10 + HEIGHT)
 
     # print bars
+    c1 = colorsys.rgb_to_hls(0.1176, 0.4078, 0.1372)
+    c2 = colorsys.rgb_to_hls(0.8392, 0.9019, 0.5215)
+    c1 = colorsys.rgb_to_hls(0.9, 0.0, 0.0)
+    c2 = colorsys.rgb_to_hls(0.2, 0.9, 0.0)
+
+    def _get_color(v):
+        p = v / max_height
+        q = 1.0 - p
+        c = (c1[0] * p + c2[0] * q, c1[1] * p + c2[1] * q,
+             c1[2] * p + c2[2] * q)
+        c = colorsys.hls_to_rgb(*c)
+        c = tuple(int(_c * 255) for _c in c)
+        return '#%02x%02x%02x' % c
+
     print >> output, ('<g transform="translate({}, {})">'
                       .format(20 + margin, margin))
     cell = (' <rect width="%d" height="{0}" x="{1}" y="{2}" '
@@ -199,7 +214,7 @@ def print_graph(output, stats, firstDay, lastDay):
         data = _get_data(cur)
         height = data / max_height * HEIGHT
         y = HEIGHT - height
-        print >> output, cell.format(height, x, y, '#f95', data)
+        print >> output, cell.format(height, x, y, _get_color(data), data)
 
         if cur.day == 1 and lastDay - cur > datetime.timedelta(days=5):
             print >> output, date_str.format(x, cur.year, cur.month)
