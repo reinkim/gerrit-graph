@@ -155,14 +155,15 @@ def print_graph(output, stats, firstDay, lastDay):
     def _get_data(d):
         return stats.get(d, 0) / 86400.0
 
-    HEIGHT = 120
+    HEIGHT = 150
     BAR = 3
     max_height, div = _find_axis_max(max(stats.values()) / 86400.0)
     max_height *= 1.0
 
     margin = 10
     days = (lastDay - firstDay).days + 1
-    width = 20 + margin * 2 + BAR * days - 1
+    WIDTH = BAR * days - 1
+    width = 20 + margin * 2 + WIDTH
     height = margin + 12 + HEIGHT
 
     # svg boilerplate
@@ -177,19 +178,20 @@ def print_graph(output, stats, firstDay, lastDay):
     label = ('<text dx="10" dy="{0}" style="font-size: 9px; fill: #333">'
              '{1}</text>')
     hr = ('<line x1="%d" y1="{0}" x2="%d" y2="{0}" '
-          'style="stroke-width: 1; stroke: black; stroke-opacity: 0.2;"/>'
-          % (margin + 20, width - margin))
-    for i in xrange(div):
+          'style="stroke-width: 1; stroke: black; stroke-opacity: 0.2; '
+          'stroke-dasharray: 3, 3;"/>' % (margin + 20, width - margin))
+
+    print >> output, label.format(13, int(max_height))
+    for i in xrange(1, div):
         y = 10 + HEIGHT / div * i
         pos = (div - i) * int(max_height) / div
         print >> output, label.format(y + 3, pos)
         print >> output, hr.format(y)
     print >> output, label.format(13 + HEIGHT, 0)
-    print >> output, hr.format(10 + HEIGHT)
 
     # print bars
-    c1 = colorsys.rgb_to_hls(0.1176, 0.4078, 0.1372)
-    c2 = colorsys.rgb_to_hls(0.8392, 0.9019, 0.5215)
+#    c1 = colorsys.rgb_to_hls(0.1176, 0.4078, 0.1372)
+#    c2 = colorsys.rgb_to_hls(0.8392, 0.9019, 0.5215)
     c1 = colorsys.rgb_to_hls(0.9, 0.0, 0.0)
     c2 = colorsys.rgb_to_hls(0.2, 0.9, 0.0)
 
@@ -208,6 +210,9 @@ def print_graph(output, stats, firstDay, lastDay):
             'style="fill: {3};">{4}</rect>' % (BAR - 1))
     date_str = ('<text dx="{0}" dy="%d" style="font-size: 8px; fill: #333">'
                 '{1}/{2}</text>' % (HEIGHT + 10))
+    vtick = ('<line x1="{0}" x2="{0}" y1="%d" y2="%d" '
+             'style="stroke-width: 1; stroke: black; stroke-opacity: 0.8;"/>'
+             % (0, 4))
     cur = firstDay
     for i in xrange(days):
         x = i * BAR
@@ -216,9 +221,15 @@ def print_graph(output, stats, firstDay, lastDay):
         y = HEIGHT - height
         print >> output, cell.format(height, x, y, _get_color(data), data)
 
-        if cur.day == 1 and lastDay - cur > datetime.timedelta(days=5):
-            print >> output, date_str.format(x, cur.year, cur.month)
+        if cur.day == 1 and lastDay - cur > datetime.timedelta(days=4):
+            print >> output, date_str.format(x - 2, cur.year, cur.month)
+            print >> output, vtick.format(x)
         cur += datetime.timedelta(days=1)
+
+    # surronding box
+    rect = ('<path d="M -1 0 l {0} 0 l 0 {1} l -{0} 0 z" '
+            'stroke="black" fill="none"/>')
+    print >> output, rect.format(WIDTH + 2, HEIGHT)
     print >> output, '</g></svg>'
 
 
